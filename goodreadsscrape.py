@@ -110,4 +110,5 @@ for index, row in df.iterrows():
 
     # Save updated data
     df.to_csv("goodreads_books_updated.csv", index = False)
-    print("✅ Scraping completed. Data saved to 'goodreads_books_updated.csv'.")
+
+print("✅ Scraping completed. Data saved to 'goodreads_books_updated.csv'.")
