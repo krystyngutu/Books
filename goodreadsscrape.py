@@ -1,8 +1,3 @@
-# -*- coding: utf-8 -*-
-"""goodReadsScrape"""
-
-# pip install requests beautifulsoup4 pandas selenium
-
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -111,4 +106,4 @@ for index, row in df.iterrows():
     # Save updated data
     df.to_csv("goodreads_books_updated.csv", index = False)
 
-print("✅ Scraping completed. Data saved to 'goodreads_books_updated.csv'.")
+print("Scraping completed. Data saved to 'goodreads_books_updated.csv'.")
