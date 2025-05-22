@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-"""totalScrape.ipynb"""
-
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -116,6 +113,6 @@ for index, row in df.iterrows():
         print(f"Error processing {row['Book Link']}: {e}")
         continue
 
-# Save the updated data
+# Save updated data
 df.to_csv("goodreads_books_all_pages_updated.csv", index=False)
-print("✅ Scraping completed. Data saved to 'goodreads_books_all_pages_updated.csv'.")
+print("Scraping completed. Data saved to 'goodreads_books.csv'.")
