@@ -82,7 +82,8 @@ def scrapeBookDetails(url):
 books = []
 page_num = 1
 
-while True:
+#DONT USE WHILE TRUE OR THIS LOOP NEVER ENDS
+while page_num < 20:
     page_url = f"{url}?page={page_num}"
     print(f"Scraping page {page_num}...")
 
