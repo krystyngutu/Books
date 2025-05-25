@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import time
 import logging
+import re
 
 logger = logging.getLogger("scraper")
 
@@ -29,11 +30,29 @@ def scrapeBooksFromPage(url):
             avgRating = row.select_one(".avg_rating")
             avgRating = avgRating.text.replace("avg rating", "").strip() if avgRating else "NA"
 
-            dateAdded = row.select_one(".date_added span")
-            dateAdded = dateAdded.text.strip() if dateAdded else "NA"
+            rating = row.select_one(".rating .value")
+            rating = rating.text.strip() if rating else "NA"
+
+            numRatings = row.select_one(".num_ratings")
+            numRatings = numRatings.text.replace("num ratings", "").strip() if numRatings else "NA"
+
+            review = row.select_one(".review")
+            review = review.text.strip() if review else "NA"
 
             datePublished = row.select_one(".date_pub")
             datePublished = datePublished.text.replace("date pub", "").strip() if datePublished else "NA"
+
+            dateAdded = row.select_one(".date_added span")
+            dateAdded = dateAdded.text.strip() if dateAdded else "NA"
+
+            dateStarted = row.select_one(".date_started span")
+            dateStarted = dateStarted.text.strip() if dateStarted else "NA"
+            
+            dateRead = row.select_one(".date_read span")
+            dateRead = dateRead.text.strip() if dateRead else "NA"
+
+            shelves = row.select_one(".shelves")
+            shelves = shelves.text.strip() if shelves else "NA"
 
             pages = row.select_one(".num_pages")
             if pages:
@@ -47,8 +66,14 @@ def scrapeBooksFromPage(url):
                 "Title": title,
                 "Author": author,
                 "Average Rating": avgRating,
-                "Date Added": dateAdded,
+                "Rating": rating,
+                "Number of Ratings": numRatings,
+                "Review": review,
                 "Date Published": datePublished,
+                "Date Added": dateAdded,
+                "Date Started": dateStarted,
+                "Date Read": dateRead,
+                "Shelves": shelves,
                 "Pages": pages,
                 "Book Link": bookLink,
             })
@@ -69,7 +94,7 @@ def scrapeBookDetails(url):
 
     # Extract number of pages (from .BookDetails section)
     pagesElement = soup.select_one(".BookDetails")
-    pagesText = pagesElement.text.strip() if pagesElement else "NA"
+    pagesText = pagesElement.text.strip() if summaryElement else "NA"
 
     # Extract genres (from "genresList")
     genresContainer = soup.select_one(".BookPageMetadataSection__genres")
@@ -86,7 +111,7 @@ books = []
 pageNum = 1
 
 # DONT USE WHILE TRUE OR THIS LOOP NEVER ENDS
-while pageNum < 20:
+while pageNum < 2000:
     pageUrl = f"{url}?page={pageNum}"
     print(f"Scraping page {pageNum}...")
 
@@ -99,10 +124,14 @@ while pageNum < 20:
     time.sleep(1)  # To avoid being blocked
     logger.warn(f"Page done: ${pageNum}")
 
+# Scrape first page only
+# print("Scraping first page...")
+# books = scrapeBooksFromPage(url)
+
 # Save the books data to CSV
 df = pd.DataFrame(books)
-df.to_csv("goodreads_books_all_pages.csv", index=False)
-print(f"Scraped {len(books)} books from all pages and saved to 'goodreads_books_all_pages.csv'.")
+df.to_csv("goodreads_books.csv", index=False)
+print(f"Scraped {len(books)} books from all pages and saved to 'goodreads_books.csv'.")
 
 # Now, scrape additional details (summary, pages, genres) for each book
 for index, row in df.iterrows():
