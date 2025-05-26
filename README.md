@@ -30,7 +30,7 @@ Each book has the following attributes:
 ---
 ## Tools
 - **Python**: Core language for scripting
-- **BeautifulSoup**: Web scraping Goodreads HTML
+- **BeautifulSoup**: Web scraping
 - **Pandas**: Data processing and manipulation
 - **Regex**: Cleaning and extracting structured data
 - **Matplotlib / Seaborn / Plotly** (planned): Visualization of reading trends
