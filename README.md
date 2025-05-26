@@ -6,7 +6,7 @@ This project analyzes my reading history and preferences. It collects info on bo
 - Aggregate book data
 - Analyze historical reading patterns
 - Predict future book preferences
-- Explore trends in genres, authors, ratings, and more
+- Explore trends in genres, authors, ratings, etc.
 
 ---
 ## Features Collected
