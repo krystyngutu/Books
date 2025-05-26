@@ -7,7 +7,7 @@ import re
 
 logger = logging.getLogger("scraper")
 
-# GoodReads list URL (starting page)
+# List URL (starting page)
 url = "https://www.goodreads.com/review/list/68426939"
 
 headers = {
@@ -130,8 +130,8 @@ while pageNum < 2000:
 
 # Save the books data to CSV
 df = pd.DataFrame(books)
-df.to_csv("goodreads_books.csv", index=False)
-print(f"Scraped {len(books)} books from all pages and saved to 'goodreads_books.csv'.")
+df.to_csv("books.csv", index=False)
+print(f"Scraped {len(books)} books from all pages and saved to 'books.csv'.")
 
 # Now, scrape additional details (summary, pages, genres) for each book
 for index, row in df.iterrows():
@@ -149,6 +149,6 @@ for index, row in df.iterrows():
         continue
 
 # Save updated data
-df.to_csv("goodreads_books.csv", index=False)
-print("Scraping completed. Data saved to 'goodreads_books.csv'.")
+df.to_csv("books.csv", index=False)
+print("Scraping completed. Data saved to 'books.csv'.")
 logger.warn(f"Scrape done")
