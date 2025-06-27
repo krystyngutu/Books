@@ -5,13 +5,16 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from cycler import cycler
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import linear_kernel
 
 # --------------------
-# PAGE SETUP
+# PAGE SETUP & THEME
 # --------------------
 st.set_page_config(layout="wide")
+THEME_COLORS = ["#ff00bf", "#0097b2", "#32c5a8", "#ec3d77", "#ff8839", "#56bb70"]
+plt.rcParams['axes.prop_cycle'] = cycler('color', THEME_COLORS)
 
-# Inject Patrick Hand font and style title
 st.markdown(
     """
     <style>
@@ -19,17 +22,16 @@ st.markdown(
     .title {
         color: #ff00bf;
         font-family: 'Patrick Hand', cursive;
+        margin-bottom: 0;
+    }
+    .subtitle {
+        font-family: 'Patrick Hand', cursive;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
-st.markdown('<h1 class="title">Book Analysis (Data Updated 25.05.2025)</h1>', unsafe_allow_html=True)
-st.title("Book Analysis (Data Updated 25.05.2025)")
-
-# Apply theme palette globally
-THEME_COLORS = ["#ff00bf", "#0097b2", "#32c5a8", "#ec3d77", "#ff8839", "#56bb70"]
-plt.rcParams['axes.prop_cycle'] = cycler('color', THEME_COLORS)
+st.markdown('<h1 class="title">Book Analytics Dashboard</h1>', unsafe_allow_html=True)
 
 # --------------------
 # LOAD AND CLEAN DATA
@@ -39,43 +41,26 @@ def loadData():
     df = pd.read_csv("mergedBooks.csv")
 
     books = df[[
-        "Title", "Author", "Additional Authors", "Publisher",
-        "Average Rating", "Number of Ratings", "My Rating",
-        "My Review", "Number of Pages", "Pages",
-        "Year Published", "Original Publication Year",
-        "Date Published", "Date Added", "Date Started", "Date Read",
-        "Summary", "Genres", "Exclusive Shelf"
+        "Title", "Author", "Publisher",
+        "Average Rating", "Number of Ratings", "Pages",
+        "Date Added", "Date Started", "Date Read",
+        "Genres", "Summary"
     ]].copy()
 
-    # Convert to datetime
-    dateColumns = ["Date Published", "Date Added", "Date Started", "Date Read"]
+    # parse dates
+    dateColumns = ["Date Added", "Date Started", "Date Read"]
     for col in dateColumns:
         books[col] = pd.to_datetime(books[col], errors="coerce")
 
-    # Fill missing publication dates
-    books["Original Publication Year"] = pd.to_numeric(books["Original Publication Year"], errors="coerce")
-    books["Year Published"] = pd.to_numeric(books["Year Published"], errors="coerce")
-    books["Date Published"] = (
-        books["Date Published"]
-        .combine_first(pd.to_datetime(books["Original Publication Year"], format="%Y", errors="coerce"))
-        .combine_first(pd.to_datetime(books["Year Published"], format="%Y", errors="coerce"))
-    )
+    # compute read count vs unread
+    books["HasBeenRead"] = books["Date Read"].notna()
 
-    # Cleanup columns
-    books.drop(columns=["Pages", "Year Published", "Original Publication Year"], inplace=True)
-    books.rename(columns={"Number of Pages": "Pages"}, inplace=True)
+    # compute days-to-read
+    books["DaysToRead"] = (books["Date Read"] - books["Date Started"]).dt.days
 
-    return books
+    return books.reset_index(drop=True)
 
 books = loadData()
-
-# --------------------
-# CHECK FOR MISSING VALUES
-# --------------------
-print("Columns With Missing Values:\n", books.isna().sum())
-print("\nUnique Values in Key Columns:")
-for col in books:
-    print(f"{col}: {books[col].nunique()} unique entries")
 
 # --------------------
 # SIDEBAR FILTERS
@@ -86,101 +71,130 @@ allGenres = sorted(
 selected = st.sidebar.multiselect("Filter by Genre", allGenres)
 
 if selected:
-    mask = books["Genres"].apply(
+    genreMask = books["Genres"].apply(
         lambda cell: any(g in cell for g in selected) if pd.notna(cell) else False
     )
-    books = books[mask].reset_index(drop=True)
+    books = books[genreMask].reset_index(drop=True)
 
 # --------------------
-# HIGH-LEVEL METRICS
+# SUMMARY CARDS
 # --------------------
-st.sidebar.markdown("### Summary Metrics")
-st.sidebar.metric("Books Shown", len(books))
-st.sidebar.metric("Avg. Rating", f"{books['Average Rating'].mean():.2f}")
+col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("Total Books", len(books))
+col2.metric("Books Read", int(books["HasBeenRead"].sum()))
+col3.metric("Unread Books", int((~books["HasBeenRead"]).sum()))
+col4.metric("Avg. Rating", f"{books['Average Rating'].mean():.2f}")
+col5.metric("Unique Genres", len(allGenres))
 
-# Helper for dynamic titles
+# helper for dynamic titles
 def makeTitle(base):
     if selected:
-        return f"{base} (Genres: {', '.join(selected)})"
+        return f"{base} (Filtered: {', '.join(selected)})"
     return base
 
 # --------------------
-# EDA VISUALIZATIONS
+# TABS FOR LAYOUT
 # --------------------
-# 1) Timeline of Books Added
-st.subheader(makeTitle("Books Added Over Time"))
-fig, ax = plt.subplots()
-books.groupby(books["Date Added"].dt.to_period("M")).size().plot(ax=ax)
-ax.set_xlabel("Month")
-ax.set_ylabel("Count")
-ax.set_title(makeTitle("Monthly Books Added"))
-plt.xticks(rotation=45)
-st.pyplot(fig)
+tabs = st.tabs(["Overview", "Genres", "Authors", "Details", "Recommendations"])
 
-# 2) Histogram of Average Ratings
-st.subheader(makeTitle("Distribution of Average Ratings"))
-fig, ax = plt.subplots()
-ax.hist(books["Average Rating"].dropna(), bins=20)
-ax.set_xlabel("Average Rating")
-ax.set_ylabel("Frequency")
-ax.set_title(makeTitle("Ratings Histogram"))
-st.pyplot(fig)
+# Overview Tab
+with tabs[0]:
+    st.markdown(f"### <span class='subtitle'>{makeTitle('Reading Timeline')}</span>", unsafe_allow_html=True)
+    fig, ax = plt.subplots()
+    books.groupby(books["Date Added"].dt.to_period("M")).size().plot(ax=ax)
+    ax.set_title("Books Added Over Time")
+    ax.set_xlabel("Month")
+    ax.set_ylabel("Count")
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
 
-# 3) Histogram of Page Counts
-st.subheader(makeTitle("Distribution of Page Counts"))
-fig, ax = plt.subplots()
-ax.hist(books["Pages"].dropna(), bins=20)
-ax.set_xlabel("Pages")
-ax.set_ylabel("Frequency")
-ax.set_title(makeTitle("Pages Histogram"))
-st.pyplot(fig)
+    st.markdown(f"### <span class='subtitle'>{makeTitle('Books Read Cumulative')}</span>", unsafe_allow_html=True)
+    fig, ax = plt.subplots()
+    books[books["HasBeenRead"]].groupby(books["Date Read"].dt.to_period("M")).size().cumsum().plot(ax=ax)
+    ax.set_title("Cumulative Books Read")
+    ax.set_xlabel("Month")
+    ax.set_ylabel("Cumulative Count")
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
 
-# 4) Top Publishers
-st.subheader(makeTitle("Top 10 Publishers by Number of Books"))
-publisherCounts = books["Publisher"].value_counts().head(10)
-fig, ax = plt.subplots()
-publisherCounts.plot(kind="barh", ax=ax)
-ax.set_xlabel("Number of Books")
-ax.invert_yaxis()
-ax.set_title(makeTitle("Top Publishers"))
-st.pyplot(fig)
+# Genres Tab
+with tabs[1]:
+    st.markdown(f"### <span class='subtitle'>{makeTitle('Genre Distribution')}</span>", unsafe_allow_html=True)
+    # prepare for pie
+    genreExploded = books.assign(Genre=books["Genres"].str.split(",")).explode("Genre")
+    genreExploded["Genre"] = genreExploded["Genre"].str.strip()
+    genreCounts = genreExploded["Genre"].value_counts().head(10)
+    fig, ax = plt.subplots()
+    ax.pie(genreCounts, labels=genreCounts.index, autopct="%1.1f%%", startangle=140,
+           wedgeprops={'width':0.5})
+    ax.set_title("Top 10 Genres")
+    st.pyplot(fig)
 
-# --------------------
-# TOP REPEAT AUTHORS
-# --------------------
-authorCounts = books["Author"].value_counts()
-repeatAuthors = authorCounts[authorCounts > 1].index
-authoredBooks = books[books["Author"].isin(repeatAuthors)].copy()
+    st.markdown(f"### <span class='subtitle'>{makeTitle('Avg. Rating by Genre')}</span>", unsafe_allow_html=True)
+    avgByGenre = genreExploded.groupby("Genre")["Average Rating"].mean().sort_values(ascending=False).head(10)
+    fig, ax = plt.subplots()
+    avgByGenre.plot(kind="bar", ax=ax)
+    ax.set_ylabel("Average Rating")
+    ax.set_title("Top 10 Genres by Rating")
+    plt.xticks(rotation=45, ha="right")
+    st.pyplot(fig)
 
-authoredBooks["Shelf Status"] = authoredBooks["Exclusive Shelf"].map({
-    "read": "Have Read",
-    "to-read": "Want to Read"
-}).fillna("Other")
+# Authors Tab
+with tabs[2]:
+    st.markdown(f"### <span class='subtitle'>{makeTitle('Top Authors')}</span>", unsafe_allow_html=True)
+    authorCounts = books["Author"].value_counts().head(10)
+    fig, ax = plt.subplots()
+    authorCounts.plot(kind="bar", ax=ax)
+    ax.set_ylabel("Books")
+    ax.set_title("Top 10 Authors by Count")
+    plt.xticks(rotation=45, ha="right")
+    st.pyplot(fig)
 
-authorSummary = (
-    authoredBooks
-    .groupby(["Author", "Shelf Status"])
-    .size()
-    .unstack(fill_value=0)
-    .reset_index()
-)
+# Details Tab
+with tabs[3]:
+    st.markdown(f"### <span class='subtitle'>{makeTitle('Pages vs. Rating')}</span>", unsafe_allow_html=True)
+    fig, ax = plt.subplots()
+    ax.scatter(books["Pages"], books["Average Rating"], s=20, alpha=0.6)
+    ax.set_xlabel("Pages")
+    ax.set_ylabel("Average Rating")
+    ax.set_title("Pages vs. Rating")
+    st.pyplot(fig)
 
-for col in ("Have Read", "Want to Read"):
-    if col not in authorSummary:
-        authorSummary[col] = 0
+    st.markdown(f"### <span class='subtitle'>{makeTitle('Publication Year Histogram')}</span>", unsafe_allow_html=True)
+    pubYears = books["Date Added"].dt.year.dropna().astype(int)
+    fig, ax = plt.subplots()
+    ax.hist(pubYears, bins=20)
+    ax.set_xlabel("Year")
+    ax.set_ylabel("Count")
+    ax.set_title("Books Added by Year")
+    st.pyplot(fig)
 
-authorSummary["Total"] = authorSummary["Have Read"] + authorSummary["Want to Read"]
-authorSummary = authorSummary.sort_values("Total", ascending=False)
+    st.markdown(f"### <span class='subtitle'>{makeTitle('Reading Pace')}</span>", unsafe_allow_html=True)
+    fig, ax = plt.subplots()
+    books["DaysToRead"].dropna().plot(kind="hist", bins=30, ax=ax)
+    ax.set_xlabel("Days to Read")
+    ax.set_ylabel("Count")
+    ax.set_title("Distribution of Reading Time")
+    st.pyplot(fig)
 
-st.subheader(makeTitle("Top Repeat Authors: Have Read vs Want to Read"))
-fig, ax = plt.subplots(figsize=(10, 6))
-authorSummary.head(10).set_index("Author")[["Have Read", "Want to Read"]].plot(
-    kind="bar", stacked=True, ax=ax
-)
-ax.set_ylabel("Number of Books")
-ax.set_title(makeTitle("Author Shelf Status Comparison"))
-plt.xticks(rotation=45, ha="right")
-st.pyplot(fig)
+# Recommendations Tab
+with tabs[4]:
+    st.markdown(f"### <span class='subtitle'>Content-Based Recommendations</span>", unsafe_allow_html=True)
+    # build TF-IDF matrix
+    books["TextForRec"] = books["Summary"].fillna("") + " " + books["Genres"].fillna("")
+    tfidf = TfidfVectorizer(stop_words='english')
+    tfidfMatrix = tfidf.fit_transform(books["TextForRec"])
+    cosineSim = linear_kernel(tfidfMatrix, tfidfMatrix)
 
-if st.checkbox("Show author breakdown table"):
-    st.dataframe(authorSummary.head(20))
+    # helper
+    def getRecs(title, num=5):
+        idx = books[books["Title"] == title].index[0]
+        simScores = list(enumerate(cosineSim[idx]))
+        simScores = sorted(simScores, key=lambda x: x[1], reverse=True)[1:num+1]
+        recIndices = [i[0] for i in simScores]
+        return books.iloc[recIndices][["Title", "Author", "Average Rating", "Genres"]]
+
+    chosen = st.selectbox("Select a book you've read:", books["Title"].tolist())
+    if st.button("Recommend"):
+        recommendations = getRecs(chosen)
+        st.table(recommendations)
