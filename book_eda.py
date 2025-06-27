@@ -9,13 +9,29 @@ import matplotlib.pyplot as plt
 # PAGE SETUP
 # --------------------
 st.set_page_config(layout="wide")
+
+# Inject Patrick Hand font and style title
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap');
+    .title {
+        color: #ff00bf;
+        font-family: 'Patrick Hand', cursive;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+st.markdown('<h1 class="title">Book Analysis (Data Updated 25.05.2025)</h1>', unsafe_allow_html=True)
+
 st.title("Book Analysis (Data Updated 25.05.2025)")
 
 # --------------------
 # LOAD AND CLEAN DATA
 # --------------------
 # @st.cache_data
-def load_data():
+def loadData():
     df = pd.read_csv("mergedBooks.csv")
 
     # Keep only relevant columns
@@ -37,19 +53,16 @@ def load_data():
     books["Original Publication Year"] = pd.to_numeric(books["Original Publication Year"], errors="coerce")
     books["Year Published"] = pd.to_numeric(books["Year Published"], errors="coerce")
 
-    books["Date Published"] = books["Date Published"].combine_first(
-        pd.to_datetime(books["Original Publication Year"], format="%Y", errors="coerce"))
-    
-    books["Date Published"] = books["Date Published"].combine_first(
-        pd.to_datetime(books["Year Published"], format="%Y", errors="coerce"))
-    
-    # Final cleanup
+    books["Date Published"] = books["Date Published"] \
+        .combine_first(pd.to_datetime(books["Original Publication Year"], format="%Y", errors="coerce")) \
+        .combine_first(pd.to_datetime(books["Year Published"], format="%Y", errors="coerce"))
+
     books.drop(columns=["Pages", "Year Published", "Original Publication Year"], inplace=True)
     books.rename(columns={"Number of Pages": "Pages"}, inplace=True)
 
     return books
 
-books = load_data()
+books = loadData()
 
 # --------------------
 # CHECK FOR MISSING VALUES
@@ -61,47 +74,102 @@ for col in books:
     print(f"{col}: {books[col].nunique()} unique entries")
 
 # --------------------
-# AUTHOR COLUMN
+# SIDEBAR FILTERS
 # --------------------
-# Count authors
+# Build a list of all unique genres
+allGenres = sorted(
+    {g.strip() for sub in books["Genres"].dropna().str.split(",") for g in sub}
+)
+selected = st.sidebar.multiselect("Filter by Genre", allGenres)
+
+# Apply genre filter
+if selected:
+    mask = books["Genres"].apply(
+        lambda cell: any(g in cell for g in selected) if pd.notna(cell) else False
+    )
+    books = books[mask]
+
+# --------------------
+# HIGH-LEVEL METRICS
+# --------------------
+st.sidebar.markdown("### Summary Metrics")
+st.sidebar.metric("Books Shown", len(books))
+st.sidebar.metric("Avg. Rating", f"{books['Average Rating'].mean():.2f}")
+
+# --------------------
+# EDA VISUALIZATIONS
+# --------------------
+# 1) Timeline of Books Added
+st.subheader("Books Added Over Time")
+fig, ax = plt.subplots()
+books.groupby(books["Date Added"].dt.to_period("M")).size().plot(ax=ax)
+ax.set_xlabel("Month")
+ax.set_ylabel("Count")
+ax.set_title("Monthly Books Added")
+plt.xticks(rotation=45)
+st.pyplot(fig)
+
+# 2) Histogram of Average Ratings
+st.subheader("Distribution of Average Ratings")
+fig, ax = plt.subplots()
+ax.hist(books["Average Rating"].dropna(), bins=20)
+ax.set_xlabel("Average Rating")
+ax.set_ylabel("Frequency")
+st.pyplot(fig)
+
+# 3) Histogram of Page Counts
+st.subheader("Distribution of Page Counts")
+fig, ax = plt.subplots()
+ax.hist(books["Pages"].dropna(), bins=20)
+ax.set_xlabel("Pages")
+ax.set_ylabel("Frequency")
+st.pyplot(fig)
+
+# 4) Top Publishers
+st.subheader("Top 10 Publishers by Number of Books")
+publisher_counts = books["Publisher"].value_counts().head(10)
+fig, ax = plt.subplots()
+publisher_counts.plot(kind="barh", ax=ax)
+ax.set_xlabel("Number of Books")
+ax.invert_yaxis()
+st.pyplot(fig)
+
+# --------------------
+# TOP REPEAT AUTHORS
+# --------------------
+# Identify authors with multiple books
 authorCounts = books["Author"].value_counts()
-repeatAuthors = authorCounts[authorCounts > 1].index
+repeat = authorCounts[authorCounts > 1].index
+authored = books[books["Author"].isin(repeat)].copy()
 
-# Filter for repeat authors
-authoredBooks = books[books["Author"].isin(repeatAuthors)].copy()
-
-# Normalize shelf names 
-authoredBooks["Shelf Status"] = authoredBooks["Exclusive Shelf"].map({
+# Map shelf status
+authored["Shelf Status"] = authored["Exclusive Shelf"].map({
     "read": "Have Read",
     "to-read": "Want to Read"
 }).fillna("Other")
 
-# Count read vs want-to-read per author
-authorSummary = (authoredBooks.groupby(["Author", "Shelf Status"]).size().unstack(fill_value=0).reset_index())
+authorSummary = (
+    authored.groupby(["Author", "Shelf Status"])
+    .size().unstack(fill_value=0)
+    .reset_index()
+)
 
-# Fill missing columns if only one category exists
-if "Have Read" not in authorSummary.columns:
-    authorSummary["Have Read"] = 0
-if "Want to Read" not in authorSummary.columns:
-    authorSummary["Want to Read"] = 0
-
-# --------------------
-# RUN VISUALIZATIONS
-# --------------------
-# Sort by most books total
+for col in ("Have Read", "Want to Read"):
+    if col not in authorSummary:
+        authorSummary[col] = 0
 authorSummary["Total"] = authorSummary["Have Read"] + authorSummary["Want to Read"]
-authorSummary.sort_values("Total", ascending=False, inplace=True)
+authorSummary = authorSummary.sort_values("Total", ascending=False)
 
-# Plot
 st.subheader("Top Repeat Authors: Have Read vs Want to Read")
 fig, ax = plt.subplots(figsize=(10, 6))
-author_plot = authorSummary.head(10).set_index("Author")[["Have Read", "Want to Read"]]
-author_plot.plot(kind="bar", stacked=True, ax=ax)
+authorSummary.head(10).set_index("Author")[["Have Read", "Want to Read"]].plot(
+    kind="bar", stacked=True, ax=ax
+)
 ax.set_ylabel("Number of Books")
 ax.set_title("Top Authors by Shelf Status")
-ax.legend(title="Status")
 plt.xticks(rotation=45, ha="right")
 st.pyplot(fig)
 
 # Show raw table
-st.dataframe(authorSummary.head(20))
+if st.checkbox("Show author breakdown table"):
+    st.dataframe(authorSummary.head(20))
